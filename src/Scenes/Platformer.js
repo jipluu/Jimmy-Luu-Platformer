@@ -146,8 +146,8 @@ class Platformer extends Phaser.Scene {
 
         // Score text - top-left, adjusted for zoom
         this.scoreText = this.add.text(
-            16 / zoom,             // x adjusted for zoom
-            16 / zoom,             // y adjusted for zoom
+            16 / zoom,
+            16 / zoom, 
             'Score: 0',
             {
                 fontSize: (20 / zoom) + 'px', // scale font size down
