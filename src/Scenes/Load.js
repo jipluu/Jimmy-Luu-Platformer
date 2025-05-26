@@ -6,27 +6,23 @@ class Load extends Phaser.Scene {
     preload() {
         this.load.setPath("./assets/");
 
-
-        // Load characters spritesheet
+        // Characters and tilemap
         this.load.atlas("platformer_characters", "tilemap-characters-packed.png", "tilemap-characters-packed.json");
+        this.load.image("tilemap_cheet", "monochrome_tilemap_packed.png");
+        this.load.tilemapTiledJSON("platformer-level-1", "platformer-level-1.tmj");
 
-        // Load tilemap information
-        this.load.image("tilemap_tiles", "monochrome_tilemap_packed.png", "Space Background.png");            // Packed tilemap
-        this.load.tilemapTiledJSON("platformer-level-1", "platformer-level-1.tmj");   // Tilemap in JSON
-
-        // Load the tilemap as a spritesheet
         this.load.spritesheet("tilemap_sheet", "monochrome_tilemap_packed.png", {
             frameWidth: 16,
             frameHeight: 16
         });
 
-        // Oooh, fancy. A multi atlas is a texture atlas which has the textures spread
-        // across multiple png files, so as to keep their size small for use with
-        // lower resource devices (like mobile phones).
-        // kenny-particles.json internally has a list of the png files
-        // The multiatlas was created using TexturePacker and the Kenny
-        // Particle Pack asset pack.
+        // Particles
         this.load.multiatlas("kenny-particles", "kenny-particles.json");
+
+        // Audio
+        this.load.audio("coinSound", "pickupCoin.wav");
+        this.load.audio('bgm', 'slow-travel.wav');
+        this.load.audio("jumpSound", "jump.wav");
     }
 
     create() {
@@ -46,25 +42,18 @@ class Load extends Phaser.Scene {
         this.anims.create({
             key: 'idle',
             defaultTextureKey: "platformer_characters",
-            frames: [
-                { frame: "tile_0000.png" }
-            ],
+            frames: [{ frame: "tile_0000.png" }],
             repeat: -1
         });
 
         this.anims.create({
             key: 'jump',
             defaultTextureKey: "platformer_characters",
-            frames: [
-                { frame: "tile_0001.png" }
-            ],
+            frames: [{ frame: "tile_0001.png" }],
+            
         });
 
-         // ...and pass to the next Scene
-         this.scene.start("platformerScene");
-    }
-
-    // Never get here since a new scene is started in create()
-    update() {
+        this.scene.start("platformerScene");
     }
 }
+

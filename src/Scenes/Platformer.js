@@ -6,7 +6,7 @@ class Platformer extends Phaser.Scene {
     init() {
         this.ACCELERATION = 200;
         this.DRAG = 6000;
-        this.VELOCITY = 250;
+        this.VELOCITY = 200;
         this.physics.world.gravity.y = 1500;
         this.JUMP_VELOCITY = -500;
         this.PARTICLE_VELOCITY = 50;
@@ -17,51 +17,76 @@ class Platformer extends Phaser.Scene {
 
         this.onLadder = false;
 
-        // health stuff
-        this.healthValue = 10;
         this.coolDown = 0;
-
-        this.teleportCooldown = 0;
-
         this.moneyCount = 0;
         this.frameCount = 0;
-        this.stopwatchTime = 0;
+        this.coinsCollected = 0;
+
+        this.isGameOver = false;
     }
 
     create() {
         // Tilemap & Tileset
-        this.map = this.add.tilemap("platformer-level-1", 16, 16, 45, 25);
-        this.tileset = this.map.addTilesetImage("monochrome_tilemap_packed", "tilemap_tiles");
+        this.map = this.add.tilemap("platformer-level-1", 16, 16, 150, 25);
+        this.tileset1 = this.map.addTilesetImage("monochrome_tilemap_packed", "tilemap_sheet");
+        this.tileset2 = this.map.addTilesetImage("Space Background", "tilemap_tiles");
 
-        // Draw layers (in correct order)
-        this.groundLayer = this.map.createLayer("Ground-n-Platforms", this.tileset, 0, 0);
-        this.ladderLayer = this.map.createLayer("ladder", this.tileset, 0, 0);
-        this.spikeLayer = this.map.createLayer("spikes", this.tileset, 0, 0);
+        // Draw layers
+        this.backgroundLayer = this.map.createLayer("Background", [this.tileset1, this.tileset2], 0, 0);
+        this.groundLayer = this.map.createLayer("Ground-n-Platforms", [this.tileset1, this.tileset2], 0, 0);
+        this.ladderLayer = this.map.createLayer("ladder", [this.tileset1, this.tileset2], 0, 0);
+        this.spikeLayer = this.map.createLayer("spikes", [this.tileset1, this.tileset2], 0, 0);
 
-        // Set collisions by properties set in Tiled
         this.groundLayer.setCollisionByProperty({ collides: true });
         this.spikeLayer.setCollisionByProperty({ spike: true });
 
-        // Coins
+        // Physics world bounds
+        this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+
+        // Background music and sounds
+        this.bgm = this.sound.add("bgm", { loop: true, volume: 0.2 });
+        this.bgm.play();
+
+        this.jumpSound = this.sound.add("jumpSound", { volume: 0.3 });
+
+
+        this.coinSound = this.sound.add("coinSound", { volume: 0.2 });
+
+        // Add coins from objects layer
         this.coins = this.map.createFromObjects("Objects", {
-            name: "coin",
+            name: "Coins",
             key: "tilemap_sheet",
-            frame: 151
+            frame: 2
         });
         this.physics.world.enable(this.coins, Phaser.Physics.Arcade.STATIC_BODY);
         this.coinGroup = this.add.group(this.coins);
 
+        // Add doors from objects layer
+        this.doors = this.map.createFromObjects("Objects", {
+            name: "Door",
+            key: "tilemap_sheet",
+            frame: 56  // adjust frame index for door as needed
+        });
+        this.physics.world.enable(this.doors, Phaser.Physics.Arcade.STATIC_BODY);
+        this.doorGroup = this.add.group(this.doors);
+
         // Player setup
-        my.sprite.player = this.physics.add.sprite(30, 210, "platformer_characters", "tile_0000.png");
+        my.sprite.player = this.physics.add.sprite(30, 210, "platformer_characters", "tile_0000.png").setScale(0.8);
         my.sprite.player.setCollideWorldBounds(true);
 
-        // Physics interactions
+        // Colliders & overlaps
         this.physics.add.collider(my.sprite.player, this.groundLayer);
-        this.physics.add.collider(my.sprite.player, this.spikeLayer, () => {
-            this.playerDie();
+        this.physics.add.collider(my.sprite.player, this.spikeLayer, () => this.playerDie(), null, this);
+        this.physics.add.overlap(my.sprite.player, this.coinGroup, (player, coin) => {
+            if (this.isGameOver) return;
+            this.coinSound.play();
+            coin.destroy();
+            this.moneyCount += 100;
+            this.scoreText.setText('Score: ' + this.moneyCount);
         });
-        this.physics.add.overlap(my.sprite.player, this.coinGroup, (obj1, obj2) => {
-            obj2.destroy();
+        this.physics.add.overlap(my.sprite.player, this.doorGroup, () => {
+            if (this.isGameOver) return;
+            this.scene.start('endGameScene');
         });
 
         // Controls
@@ -76,22 +101,84 @@ class Platformer extends Phaser.Scene {
 
         // Particles
         my.vfx.walking = this.add.particles(0, 0, "kenny-particles", {
-            frame: ['smoke_03.png', 'smoke_09.png'],
+            frame: ['dirt_02.png', 'dirt_01.png'],
             scale: { start: 0.03, end: 0.1 },
             lifespan: 350,
-            alpha: { start: 1, end: 0.1 },
+            alpha: { start: 0.1, end: 0.1 },
         });
         my.vfx.walking.stop();
 
-        // Camera
+        my.vfx.jumping = this.add.particles(0, 0, "kenny-particles", {
+            frame: ['muzzle_01.png', 'muzzle_04.png'],
+            scale: { start: 0.05, end: 0.1 },
+            lifespan: 300,
+            alpha: { start: 1, end: 0 },
+            angle: { min: 240, max: 300 },
+            speed: { min: 50, max: 150 },
+            quantity: 5
+        });
+        my.vfx.jumping.stop();
+
+        // Camera setup
         this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
-        this.cameras.main.startFollow(my.sprite.player, true, 0.25, 0.25);
         this.cameras.main.setDeadzone(50, 50);
-        this.cameras.main.setZoom(this.SCALE);
+        this.cameras.main.startFollow(my.sprite.player);
+
+        // Fixed UI Texts
+        const zoom = 3.5;
+        this.cameras.main.setZoom(zoom);
+        // Game width and height
+        const gameWidth = this.sys.game.config.width;
+        const gameHeight = this.sys.game.config.height;
+
+        // Objective text - center top, adjusted for zoom
+        this.objectiveText = this.add.text(
+            gameWidth / 2 / zoom,  // adjust x for zoom
+            10 / zoom,             // adjust y for zoom
+            "Escape this Black and White Planet",
+            {
+                fontSize: (24 / zoom) + 'px',   // scale font size down
+                fill: '#ffffff',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+            }
+        ).setOrigin(0.5, 0).setScrollFactor(0);
+
+        // Score text - top-left, adjusted for zoom
+        this.scoreText = this.add.text(
+            16 / zoom,             // x adjusted for zoom
+            16 / zoom,             // y adjusted for zoom
+            'Score: 0',
+            {
+                fontSize: (20 / zoom) + 'px', // scale font size down
+                fill: '#ffffff',
+                fontFamily: 'Arial'
+            }
+        ).setScrollFactor(0);
+
+        // Game over text - center screen, fixed
+        this.gameOverText = this.add.text(
+            gameWidth / 2,
+            gameHeight / 2,
+            'Game Over\nPress R to Restart',
+            {
+                fontSize: '40px',
+                fill: '#ff0000',
+                fontFamily: 'Arial',
+                align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0);
+        this.gameOverText.setVisible(false);
     }
 
     update() {
-        // Check if player is on a ladder tile
+        if (this.isGameOver) {
+            if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
+                this.scene.restart();
+            }
+            return;
+        }
+
         let playerTile = this.map.getTileAtWorldXY(
             my.sprite.player.x,
             my.sprite.player.y,
@@ -99,21 +186,13 @@ class Platformer extends Phaser.Scene {
             this.cameras.main,
             this.ladderLayer
         );
-
-        // Determine if player is on ladder based on tile and player position
-        if (playerTile && playerTile.properties.ladder) {
-            this.onLadder = true;
-        } else {
-            this.onLadder = false;
-        }
+        this.onLadder = playerTile?.properties?.ladder || false;
 
         if (this.onLadder) {
-            // Disable gravity while on ladder
             my.sprite.player.body.setAllowGravity(false);
             my.sprite.player.setAccelerationX(0);
             my.sprite.player.setDragX(this.DRAG);
 
-            // Vertical climbing
             if (cursors.up.isDown) {
                 my.sprite.player.setVelocityY(-this.VELOCITY_CLIMB);
                 my.sprite.player.anims.play('climb', true);
@@ -121,26 +200,16 @@ class Platformer extends Phaser.Scene {
                 my.sprite.player.setVelocityY(this.VELOCITY_CLIMB);
                 my.sprite.player.anims.play('climb', true);
             } else {
-                // Idle on ladder: slow slide down
                 my.sprite.player.setVelocityY(this.CLIMB_IDLE_DROP_SPEED);
                 my.sprite.player.anims.play('climb_idle', true);
             }
 
-            // --- NEW: Allow horizontal movement while on ladder ---
             if (cursors.left.isDown) {
                 my.sprite.player.setVelocityX(-this.VELOCITY);
                 my.sprite.player.resetFlip();
                 my.sprite.player.anims.play('walk', true);
-                // Exit ladder if moving off ladder tile horizontally
-                // We'll check if next position is still ladder tile
-                let nextTile = this.map.getTileAtWorldXY(
-                    my.sprite.player.x - 2,  // slightly left
-                    my.sprite.player.y,
-                    true,
-                    this.cameras.main,
-                    this.ladderLayer
-                );
-                if (!nextTile || !nextTile.properties.ladder) {
+                let nextTile = this.map.getTileAtWorldXY(my.sprite.player.x - 2, my.sprite.player.y, true, this.cameras.main, this.ladderLayer);
+                if (!nextTile?.properties?.ladder) {
                     this.onLadder = false;
                     my.sprite.player.body.setAllowGravity(true);
                 }
@@ -148,24 +217,15 @@ class Platformer extends Phaser.Scene {
                 my.sprite.player.setVelocityX(this.VELOCITY);
                 my.sprite.player.setFlip(true, false);
                 my.sprite.player.anims.play('walk', true);
-                // Exit ladder if moving off ladder tile horizontally
-                let nextTile = this.map.getTileAtWorldXY(
-                    my.sprite.player.x + 2,  // slightly right
-                    my.sprite.player.y,
-                    true,
-                    this.cameras.main,
-                    this.ladderLayer
-                );
-                if (!nextTile || !nextTile.properties.ladder) {
+                let nextTile = this.map.getTileAtWorldXY(my.sprite.player.x + 2, my.sprite.player.y, true, this.cameras.main, this.ladderLayer);
+                if (!nextTile?.properties?.ladder) {
                     this.onLadder = false;
                     my.sprite.player.body.setAllowGravity(true);
                 }
             } else {
-                // No horizontal input on ladder
                 my.sprite.player.setVelocityX(0);
             }
         } else {
-            // Normal gravity and controls when NOT on ladder
             my.sprite.player.body.setAllowGravity(true);
 
             if (cursors.left.isDown) {
@@ -179,7 +239,7 @@ class Platformer extends Phaser.Scene {
                 my.sprite.player.setAccelerationX(this.ACCELERATION);
                 my.sprite.player.setFlip(true, false);
                 my.sprite.player.anims.play('walk', true);
-                my.vfx.walking.startFollow(my.sprite.player, my.sprite.player.displayWidth / 2 - 10, my.sprite.player.displayHeight / 2 - 5, false);
+                my.vfx.walking.startFollow(my.sprite.player, my.sprite.player.displayWidth / 2 - 16, my.sprite.player.displayHeight / 2 - 5, false);
                 my.vfx.walking.setParticleSpeed(this.PARTICLE_VELOCITY, 0);
                 if (my.sprite.player.body.blocked.down) my.vfx.walking.start();
             } else {
@@ -193,18 +253,28 @@ class Platformer extends Phaser.Scene {
                 my.sprite.player.anims.play('jump');
             }
 
-            if (my.sprite.player.body.blocked.down && Phaser.Input.Keyboard.JustDown(cursors.up)) {
-                my.sprite.player.body.setVelocityY(this.JUMP_VELOCITY);
+            if (Phaser.Input.Keyboard.JustDown(cursors.up) && my.sprite.player.body.blocked.down) {
+                my.sprite.player.setVelocityY(this.JUMP_VELOCITY);
+                this.jumpSound.play();
+
+                // Trigger jump particles
+                my.vfx.jumping.setParticleSpeed({ min: 50, max: 150 }, { min: -20, max: 20 });
+                my.vfx.jumping.emitParticleAt(
+                    my.sprite.player.x,
+                    my.sprite.player.y + my.sprite.player.displayHeight / 2
+                );
             }
         }
-
-        if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
-            this.scene.restart();
-        }
     }
-
 
     playerDie() {
-        this.scene.restart();
+        this.isGameOver = true;
+        this.gameOverText.setVisible(true);
+        my.vfx.walking.stop();
+        this.bgm.stop();
+        my.sprite.player.setTint(0xff0000);
+        my.sprite.player.setVelocity(0, 0);
+        my.sprite.player.body.setAllowGravity(false);
     }
 }
+
